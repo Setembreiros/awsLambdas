@@ -4,16 +4,32 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/IBM/sarama"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 )
 
+type App struct {
+	producer sarama.SyncProducer
+	topic    string
+}
+
 func HandleRequest(event events.CognitoEventUserPoolsPostConfirmation) (events.CognitoEventUserPoolsPostConfirmation, error) {
 	fmt.Printf("PostConfirmation of user %s with email %s in pool %s\n", event.UserName, event.Request.UserAttributes["email"], event.UserPoolID)
 
-	_, err := createKafkaEvent(event)
+	kafkaEvent, err := createKafkaEvent(event)
 	if err != nil {
-		fmt.Println("error creating json:", err.Error())
+		return event, err
+	}
+
+	app, err := createKafkaProducer()
+	if err != nil {
+		return event, err
+	}
+
+	err = app.publish(kafkaEvent)
+	if err != nil {
+		fmt.Println("Error producer: ", err.Error())
 		return event, err
 	}
 
@@ -21,7 +37,7 @@ func HandleRequest(event events.CognitoEventUserPoolsPostConfirmation) (events.C
 }
 
 func createKafkaEvent(event events.CognitoEventUserPoolsPostConfirmation) (string, error) {
-	type NewUserRegisteredEvent struct {
+	type NewRegisteredUserEvent struct {
 		UserId   string `json:"user_id"`
 		Username string `json:"username"`
 		Email    string `json:"email"`
@@ -37,7 +53,7 @@ func createKafkaEvent(event events.CognitoEventUserPoolsPostConfirmation) (strin
 		userType = "UE"
 	}
 
-	kafkaEvent := NewUserRegisteredEvent{
+	kafkaEvent := NewRegisteredUserEvent{
 		UserId:   event.Request.UserAttributes["sub"],
 		Username: event.UserName,
 		Email:    event.Request.UserAttributes["email"],
@@ -47,10 +63,47 @@ func createKafkaEvent(event events.CognitoEventUserPoolsPostConfirmation) (strin
 	}
 	b, err := json.Marshal(kafkaEvent)
 	if err != nil {
+		fmt.Println("error creating json:", err.Error())
 		return "", err
 	}
 
 	return string(b), nil
+}
+
+func createKafkaProducer() (*App, error) {
+	config := sarama.NewConfig()
+	config.Producer.Retry.Max = 5
+	config.Producer.RequiredAcks = sarama.WaitForAll
+	config.Producer.Return.Successes = true
+
+	kafkaConn := "172.31.36.175:9092"
+
+	prd, err := sarama.NewSyncProducer([]string{kafkaConn}, config)
+	if err != nil {
+		fmt.Println("Error producer: ", err.Error())
+		return nil, err
+	}
+
+	return &App{
+		producer: prd,
+		topic:    "NewRegisteredUser",
+	}, nil
+}
+
+func (app *App) publish(event string) error {
+	msg := &sarama.ProducerMessage{
+		Topic: app.topic,
+		Value: sarama.StringEncoder(event),
+	}
+	p, o, err := app.producer.SendMessage(msg)
+	if err != nil {
+		fmt.Println("Error producer: ", err.Error())
+		return err
+	}
+
+	fmt.Println("Partition: ", p)
+	fmt.Println("Offset: ", o)
+	return nil
 }
 
 func main() {
