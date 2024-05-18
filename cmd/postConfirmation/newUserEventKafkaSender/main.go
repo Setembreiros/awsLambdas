@@ -86,7 +86,7 @@ func createKafkaProducer() (*App, error) {
 
 	return &App{
 		producer: prd,
-		topic:    "NewRegisteredUser",
+		topic:    "UserWasRegisteredEvent",
 	}, nil
 }
 

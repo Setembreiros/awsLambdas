@@ -48,7 +48,7 @@ func createCognitoClient(event events.CognitoEventUserPoolsPreSignup) (*App, err
 
 	var userPoolId string
 	if event.UserPoolID == "eu-west-3_hOUCCL4yo" {
-		userPoolId = "eu-west-3_izm3o9hR2"
+		userPoolId = "eu-west-3_mplHHKWzh"
 	} else {
 		userPoolId = "eu-west-3_hOUCCL4yo"
 	}
